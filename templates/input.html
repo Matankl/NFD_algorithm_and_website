@@ -2,11 +2,35 @@
 {% block content %}
 <h2 class="mb-3">Provide your instance</h2>
 
+<div class="alert alert-info">
+  <h5 class="fw-bold">Instructions</h5>
+  <ul class="mb-1">
+    <li><b>valuations</b> – for each agent, give an integer value for every item
+        (positive = good, negative = chore).</li>
+    <li><b>item_categories</b> – map every item to a category string.</li>
+    <li><b>category_capacities</b> – the maximum number of items <em>each agent</em>
+        may receive from that category.</li>
+  </ul>
+  <p class="mb-0">All items are automatically assigned capacity&nbsp;1, so you only
+     need the three blocks above. Click the button below to load a random valid
+     instance if you’d like a quick demo.</p>
+</div>
+
+<!-- Random-instance helper -->
+<div class="mb-3">
+  <button type="button"
+          class="btn btn-outline-secondary"
+          onclick="generateRandomInput()">
+    🎲 Generate random instance
+  </button>
+</div>
+
 <form method="post" class="row g-3">
   {% for key in ["valuations", "item_categories", "category_capacities"] %}
     <div class="col-12">
       <label class="form-label fw-bold">{{ key }}</label>
-      <textarea name="{{ key }}" class="form-control"
+      <textarea name="{{ key }}"
+                class="form-control"
                 rows="6"
                 required>{{ example[key]|tojson(indent=2) }}</textarea>
     </div>
@@ -16,4 +40,57 @@
     <button class="btn btn-success">Run algorithm</button>
   </div>
 </form>
+
+<!-- ----------------------------------------------------------------- -->
+<!-- Tiny JS helper that builds a feasible 2-agent instance on demand  -->
+<!-- ----------------------------------------------------------------- -->
+<script>
+function randInt(min, max) {               // inclusive
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function generateRandomInput() {
+  /* ----- parameters you can tweak if you want bigger examples -------- */
+  const nItems      = randInt(4, 8);       // total items
+  const nCategories = randInt(1, Math.min(3, nItems));
+  const agents      = ["Agent1", "Agent2"];
+  /* ------------------------------------------------------------------- */
+
+  // Build item list o1, o2, …
+  const items = Array.from({length: nItems}, (_, i) => `o${i + 1}`);
+
+  // Create category names cat1, cat2, …
+  const categories = Array.from({length: nCategories}, (_, i) => `cat${i + 1}`);
+
+  // Randomly assign items to categories
+  const item_categories = {};
+  items.forEach(it => {
+    item_categories[it] = categories[randInt(0, nCategories - 1)];
+  });
+
+  // Random valuations in [-5 … 5]
+  const valuations = {};
+  agents.forEach(a => {
+    valuations[a] = {};
+    items.forEach(it => {
+      valuations[a][it] = randInt(-5, 5);
+    });
+  });
+
+  // Category capacities – at least 1, at most ⌊|items_in_cat| / 2⌋
+  const category_capacities = {};
+  categories.forEach(cat => {
+    const itemsInCat = items.filter(it => item_categories[it] === cat).length;
+    category_capacities[cat] = Math.max(1, Math.floor(itemsInCat / 2));
+  });
+
+  // Fill the three <textarea>s nicely indented
+  document.querySelector('textarea[name="valuations"]').value =
+    JSON.stringify(valuations, null, 2);
+  document.querySelector('textarea[name="item_categories"]').value =
+    JSON.stringify(item_categories, null, 2);
+  document.querySelector('textarea[name="category_capacities"]').value =
+    JSON.stringify(category_capacities, null, 2);
+}
+</script>
 {% endblock %}

@@ -71,6 +71,9 @@ def index():
     """Landing page – high-level explanation & nav links."""
     return render_template("index.html")
 
+@app.route("/about")
+def about():
+    return render_template("about.html")
 
 @app.route("/demo", methods=["GET", "POST"])
 def demo():

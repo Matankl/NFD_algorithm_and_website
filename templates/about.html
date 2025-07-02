@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="mb-3">About</h1>
+
+<p class="lead">
+  Hi, I’m <strong>Matan Ziv</strong>. I hold a Master’s degree in Computer Science,
+  specializing in Data Science.
+</p>
+
+<p>
+  This website demonstrates my implementation of a fair division algorithm
+  presented in the paper
+  <a href="https://arxiv.org/abs/2205.07779" target="_blank">
+    Efficient Nearly-Fair Division with Capacity Constraints
+  </a>.
+</p>
+
+<h5 class="mt-4">Connect with me:</h5>
+<ul>
+  <li>
+     <a href="https://www.linkedin.com/in/matan-ziv-software/" target="_blank">
+    LinkedIn: matan-ziv-software</a>
+  </li>
+  <li>
+     <a href="https://github.com/Matankl" target="_blank">
+    GitHub: Matankl</a>
+  </li>
+</ul>
+
+<a href="{{ url_for('index') }}" class="btn btn-outline-primary mt-3">← Back to home</a>
+{% endblock %}
