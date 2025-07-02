@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="mb-3">Result</h2>
+
+<h5>Input (JSON)</h5>
+<pre class="bg-white p-3 border rounded">{{ raw_input }}</pre>
+
+{% if allocation %}
+  <h5 class="mt-4">Allocation (output)</h5>
+  <pre class="bg-white p-3 border rounded">{{ allocation|tojson(indent=2) }}</pre>
+{% else %}
+  <h5 class="mt-4 text-danger">No allocation returned</h5>
+{% endif %}
+
+<h5 class="mt-4">Algorithm log</h5>
+<pre class="bg-white p-3 border rounded" style="white-space: pre-wrap">{{ logs }}</pre>
+
+<a class="btn btn-secondary mt-4" href="{{ url_for('demo') }}">Run another instance</a>
+{% endblock %}

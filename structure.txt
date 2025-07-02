@@ -1,0 +1,11 @@
+fair-division-demo/
+│
+├─ app.py                ← main Flask application (detailed comments)
+├─ NFD.py                ← **your** algorithm file (copy the one you gave me)
+├─ requirements.txt
+│
+└─ templates/
+   ├─ base.html          ← minimal Bootstrap layout
+   ├─ index.html         ← landing page with an algorithm overview
+   ├─ input.html         ← form for the four JSON blocks
+   └─ result.html        ← shows input, log, and allocation

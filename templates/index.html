@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="mb-3">Efficient Nearly-Fair Division with Capacity Constraints</h1>
+
+<p class="lead">
+  This interactive demo runs the algorithm from
+    <em>Efficient Nearly-Fair Division with Capacity Constraints. Shoshan et al., AAMAS 2023</em>.
+  Give it two agents, per-category quotas and item capacities, and it will
+  compute an allocation that is
+  EF[1,1] + Pareto-optimal whenever possible.
+</p>
+
+<ol>
+  <li>Read the short algorithm overview below.</li>
+  <li>Jump to the <a href="{{ url_for('demo') }}">demo page</a>, paste your
+      own JSON, hit “Run”.</li>
+  <li>Inspect the log to see every internal step.</li>
+</ol>
+
+<h2>Algorithm in a nutshell</h2>
+<p>
+  For two agents:
+</p>
+<ol>
+  <li><strong>Category-wise W-max.</strong>
+      Build a weighted bipartite graph in each category and use maximum-weight
+      matching to maximise social welfare subject to quotas.</li>
+  <li>Check if the resulting allocation is already EF[1,1].
+      If yes, we are done.</li>
+  <li>If not, identify the envying pair &ndash; swap the best good/chore
+      pair (same category) that reduces envy the most, and iterate.</li>
+</ol>
+
+<a class="btn btn-primary" href="{{ url_for('demo') }}">Try the demo ➜</a>
+{% endblock %}

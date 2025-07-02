@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="mb-3">Provide your instance</h2>
+
+<form method="post" class="row g-3">
+  {% for key in ["valuations", "item_categories", "category_capacities"] %}
+    <div class="col-12">
+      <label class="form-label fw-bold">{{ key }}</label>
+      <textarea name="{{ key }}" class="form-control"
+                rows="6"
+                required>{{ example[key]|tojson(indent=2) }}</textarea>
+    </div>
+  {% endfor %}
+
+  <div class="col-12">
+    <button class="btn btn-success">Run algorithm</button>
+  </div>
+</form>
+{% endblock %}
