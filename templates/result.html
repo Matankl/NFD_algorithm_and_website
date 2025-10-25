@@ -9,6 +9,45 @@
   <h5 class="mt-4">Allocation (output)</h5>
   <pre class="bg-white p-3 border rounded">{{ allocation|tojson(indent=2) }}</pre>
 
+  <!-- Item Details Table -->
+  {% if item_details %}
+  <h5 class="mt-4">Item Details & Allocations</h5>
+  <div class="table-responsive">
+    <table class="table table-striped table-bordered table-hover">
+      <thead class="table-dark">
+        <tr>
+          <th>Item</th>
+          <th>Category</th>
+          {% for agent in agents %}
+          <th>Value ({{ agent }})</th>
+          {% endfor %}
+          <th>Allocated To</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for detail in item_details %}
+        <tr>
+          <td><strong><code>{{ detail.item }}</code></strong></td>
+          <td><span class="badge bg-secondary">{{ detail.category }}</span></td>
+          {% for agent in agents %}
+          <td class="text-end {% if detail.agent_values[agent] < 0 %}text-danger{% elif detail.agent_values[agent] > 0 %}text-success{% else %}text-muted{% endif %}">
+            {{ "%.2f"|format(detail.agent_values[agent]) }}
+          </td>
+          {% endfor %}
+          <td class="text-center">
+            {% if detail.allocated_to %}
+            <span class="badge bg-primary">{{ detail.allocated_to }}</span>
+            {% else %}
+            <span class="badge bg-warning text-dark">Unallocated</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   <!-- EF11 Analysis Section -->
   {% if ef11_result %}
   <h5 class="mt-4">EF[1,1] Analysis</h5>

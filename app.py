@@ -127,7 +127,7 @@ def demo():
         return render_template(
             "result.html",
             raw_input=_pretty_json(
-                valuations, category_capacities,
+                valuations, item_categories, category_capacities,
                 ),
             logs=tb,
             allocation=None,
@@ -141,22 +141,24 @@ def demo():
     # ------------------------------------------------------------------
     item_details = []
     agents = list(valuations.keys())
-    for item, category in item_categories.items():
-        detail = {
-            'item': item,
-            'category': category,
-            'values': {agent: valuations[agent].get(item, 0) for agent in agents},
-            'allocated_to': None
-        }
-        # Find which agent got this item
-        for agent, bundle in allocation.items():
-            if item in bundle:
-                detail['allocated_to'] = agent
-                break
-        item_details.append(detail)
 
-    # Sort by category then by item name
-    item_details.sort(key=lambda x: (x['category'], x['item']))
+    if allocation:
+        for item, category in item_categories.items():
+            detail = {
+                'item': item,
+                'category': category,
+                'agent_values': {agent: valuations[agent].get(item, 0) for agent in agents},
+                'allocated_to': None
+            }
+            # Find which agent got this item
+            for agent, bundle in allocation.items():
+                if item in bundle:
+                    detail['allocated_to'] = agent
+                    break
+            item_details.append(detail)
+
+        # Sort by category then by item name
+        item_details.sort(key=lambda x: (x['category'], x['item']))
 
     # ------------------------------------------------------------------
     # Success: show everything
