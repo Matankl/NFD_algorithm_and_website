@@ -1,5 +1,5 @@
 """
-Flask front-end for the ‘Nearly-Fair Division with Capacity Constraints’ demo.
+Flask front-end for the 'Nearly-Fair Division with Capacity Constraints' demo.
 
 To run locally with:
     $ python3 -m venv venv && . venv/bin/activate
@@ -22,6 +22,7 @@ from flask import (Flask, flash, redirect, render_template,
 # ----------------------------------------------------------------------
 from NFD import Nearly_Fair_Division
 from fairpyx import Instance, divide
+from is_EF11 import is_EF11  # Import the EF11 checker
 
 # ----------------------------------------------------------------------
 #  Flask setup
@@ -111,6 +112,14 @@ def demo():
         )
         allocation, log_text = run_algorithm_and_capture_logs(instance)
 
+        # Run EF11 analysis
+        ef11_result = None
+        if allocation:
+            try:
+                ef11_result = is_EF11(instance, allocation)
+            except Exception as e:
+                log_text += f"\n\n[WARNING] EF11 analysis failed: {e}"
+
     except Exception as exc:
         # Any failure (invalid input, algorithm bug, etc.) lands here
         tb = traceback.format_exc()
@@ -122,7 +131,32 @@ def demo():
                 ),
             logs=tb,
             allocation=None,
+            ef11_result=None,
+            item_details=None,
+            agents=None,
         )
+
+    # ------------------------------------------------------------------
+    # Prepare item details for display
+    # ------------------------------------------------------------------
+    item_details = []
+    agents = list(valuations.keys())
+    for item, category in item_categories.items():
+        detail = {
+            'item': item,
+            'category': category,
+            'values': {agent: valuations[agent].get(item, 0) for agent in agents},
+            'allocated_to': None
+        }
+        # Find which agent got this item
+        for agent, bundle in allocation.items():
+            if item in bundle:
+                detail['allocated_to'] = agent
+                break
+        item_details.append(detail)
+
+    # Sort by category then by item name
+    item_details.sort(key=lambda x: (x['category'], x['item']))
 
     # ------------------------------------------------------------------
     # Success: show everything
@@ -134,6 +168,9 @@ def demo():
         ),
         logs=log_text,
         allocation=allocation,
+        ef11_result=ef11_result,
+        item_details=item_details,
+        agents=agents,
     )
 
 
@@ -163,61 +200,9 @@ _EXAMPLE_INPUT = {
     },
     "category_capacities": {"cat1": 2, "cat2": 1},
 }
-import io
-import logging
-import json
-from flask import render_template, request, current_app
-import NFD  # your NFD module
-
-def run_nfd_and_capture(instance):
-    buf = io.StringIO()
-    handler = logging.StreamHandler(buf)
-    handler.setLevel(logging.DEBUG)
-
-    # get the logger used in NFD.py; __name__ inside NFD.py is 'NFD' if module name is NFD.py
-    nfd_logger = logging.getLogger('NFD')
-
-    # remember old state to restore later
-    old_level = nfd_logger.level
-    nfd_logger.addHandler(handler)
-    nfd_logger.setLevel(logging.DEBUG)
-
-    try:
-        allocation = NFD.solve(instance)   # adjust to your function name
-    except Exception:
-        import traceback
-        traceback.print_exc(file=buf)
-        allocation = None
-    finally:
-        handler.flush()
-        nfd_logger.removeHandler(handler)
-        nfd_logger.setLevel(old_level)
-
-    logs = buf.getvalue()
-    buf.close()
-    return allocation, logs
-
-# Example route: adapt to your actual route and template names
-@app.route('/run', methods=['POST'])
-def run_demo():
-    # build instance from request.form (adapt to your existing parsing)
-    instance = request.form.get('instance_json')  # example; replace with actual parsing
-    if isinstance(instance, str):
-        try:
-            instance = json.loads(instance)
-        except Exception:
-            instance = None
-
-    allocation, logs = run_nfd_and_capture(instance)
-    raw_input = json.dumps(instance, indent=2) if instance is not None else "{}"
-
-    return render_template('result.html',
-                           raw_input=raw_input,
-                           allocation=allocation,
-                           logs=logs)
 
 # ----------------------------------------------------------------------
-#  ‘main’ guard – so gunicorn / flask run both work
+#  'main' guard – so gunicorn / flask run both work
 # ----------------------------------------------------------------------
 if __name__ == '__main__':
     app.run(debug=True,host="0.0.0.0",port=5000)

@@ -8,11 +8,97 @@
 {% if allocation %}
   <h5 class="mt-4">Allocation (output)</h5>
   <pre class="bg-white p-3 border rounded">{{ allocation|tojson(indent=2) }}</pre>
+
+  <!-- EF11 Analysis Section -->
+  {% if ef11_result %}
+  <h5 class="mt-4">EF[1,1] Analysis</h5>
+  <div class="card mb-3">
+    <div class="card-header bg-primary text-white">
+      <h6 class="mb-0">Fairness Analysis Results</h6>
+    </div>
+    <div class="card-body">
+
+      <!-- Bundle Values -->
+      <h6 class="mt-3">Bundle Valuations</h6>
+      <div class="row">
+        {% for agent, values in ef11_result.bundle_values.items() %}
+        <div class="col-md-6 mb-3">
+          <div class="card">
+            <div class="card-header bg-light">
+              <strong>{{ agent }}</strong>
+            </div>
+            <div class="card-body">
+              <table class="table table-sm table-bordered mb-0">
+                <tr>
+                  <td><strong>Own Bundle Value:</strong></td>
+                  <td class="text-end">{{ "%.2f"|format(values.own_bundle_value) }}</td>
+                </tr>
+                <tr>
+                  <td><strong>Other Bundle Value:</strong></td>
+                  <td class="text-end">{{ "%.2f"|format(values.other_bundle_value) }}</td>
+                </tr>
+                <tr>
+                  <td><strong>Gap:</strong></td>
+                  <td class="text-end"><strong>{{ "%.2f"|format(values.gap) }}</strong></td>
+                </tr>
+              </table>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Swap Pairs -->
+      {% for agent, swaps in ef11_result.swap_pairs.items() %}
+        {% if swaps %}
+        <h6 class="mt-4">Potential Item Pair Removals for {{ agent }}</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-striped table-bordered">
+            <thead class="table-light">
+              <tr>
+                <th>Category</th>
+                <th>Remove from Own Bundle</th>
+                <th>Value (Chore)</th>
+                <th>Remove from Other Bundle</th>
+                <th>Value (Good)</th>
+                <th>Total Gain</th>
+                <th>Eliminates Envy</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for swap in swaps %}
+              <tr>
+                <td><strong>{{ swap.category }}</strong></td>
+                <td><code>{{ swap.remove_from_own }}</code></td>
+                <td class="text-end">{{ "%.2f"|format(swap.chore_value) }}</td>
+                <td><code>{{ swap.remove_from_other }}</code></td>
+                <td class="text-end">{{ "%.2f"|format(swap.good_value) }}</td>
+                <td class="text-end"><strong>{{ "%.2f"|format(swap.total_gain) }}</strong></td>
+                <td class="text-center">
+                  {{ swap.eliminates_envy }}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      {% endfor %}
+
+      {% if not ef11_result.swap_pairs.values()|selectattr('length')|list %}
+      <div class="alert alert-info mt-3">
+        No swap pairs identified.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
 {% else %}
   <h5 class="mt-4 text-danger">No allocation returned</h5>
 {% endif %}
 
-<h5 class="mt-4">Algorithm log</h5>
+<h5 class="mt-4">Algorithm Log</h5>
 <pre class="bg-white p-3 border rounded" style="white-space: pre-wrap">{{ logs }}</pre>
 
 <a class="btn btn-secondary mt-4" href="{{ url_for('demo') }}">Run another instance</a>
