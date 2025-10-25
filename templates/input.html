@@ -8,33 +8,53 @@
     <li><b>valuations</b> – for each agent, give an integer value for every item
         (positive = good, negative = chore).</li>
     <li><b>item_categories</b> – map every item to a category string.</li>
-    <li><b>category_capacities</b> – the maximum number of items <em>each agent</em>
+    <li><b>category_capacities</b> – maximum number of items <em>each agent</em>
         may receive from that category.</li>
   </ul>
-  <p class="mb-0">All items are automatically assigned capacity&nbsp;1, so you only
-     need the three blocks above. Click the button below to load a random valid
-     instance if you’d like a quick demo.</p>
+  <p class="mb-0">All items are automatically named <code>o1, o2, ...</code>.
+     Click “Generate random instance” for a quick valid example.
+     Capacities are computed minimally, ensuring every item can be allocated.</p>
 </div>
 
-<!-- Random-instance helper -->
-<div class="mb-3">
-  <button type="button"
-          class="btn btn-outline-secondary"
-          onclick="generateRandomInput()">
-    🎲 Generate random instance
-  </button>
+<!-- Controls -->
+
+<div class="mb-3 d-flex align-items-end gap-2 flex-wrap">
+  <div>
+    <label class="form-label mb-0">Number of items</label>
+    <input id="numItems" type="number" class="form-control" placeholder="leave empty for random" min="1" max="200">
+    <div class="form-text">Integer between 1 and 200 (default random 4–8).</div>
+  </div>
+
+  <div>
+    <label class="form-label mb-0">Number of categories</label>
+    <input id="numCategories" type="number" class="form-control" placeholder="leave empty for random" min="1" max="200">
+    <div class="form-text">Integer between 1 and number of items (default random).</div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-outline-secondary" onclick="generateRandomInput()">
+      🎲 Generate random instance
+    </button>
+    <button id="autoFixBtn" type="button" class="btn btn-outline-primary" onclick="autoFixCapacitiesFromTextareas()">
+      🛠️ Auto-fix capacities
+    </button>
+  </div>
 </div>
 
-<form method="post" class="row g-3">
+<form id="instanceForm" method="post" class="row g-3">
   {% for key in ["valuations", "item_categories", "category_capacities"] %}
     <div class="col-12">
       <label class="form-label fw-bold">{{ key }}</label>
       <textarea name="{{ key }}"
-                class="form-control"
+                class="form-control monospace"
                 rows="6"
                 required>{{ example[key]|tojson(indent=2) }}</textarea>
     </div>
   {% endfor %}
+
+  <div class="col-12">
+    <div id="validationMessages" role="status" aria-live="polite"></div>
+  </div>
 
   <div class="col-12">
     <button class="btn btn-success">Run algorithm</button>
@@ -42,55 +62,167 @@
 </form>
 
 <!-- ----------------------------------------------------------------- -->
-<!-- Tiny JS helper that builds a feasible 2-agent instance on demand  -->
+<!-- JavaScript: generation, validation, auto-fix (minimal capacities)  -->
 <!-- ----------------------------------------------------------------- -->
 <script>
-function randInt(min, max) {               // inclusive
+function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
+function clampInt(v, lo, hi) {
+  if (v === null || v === undefined || Number.isNaN(v)) return null;
+  v = Math.floor(Number(v));
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
+function parseJSON(text) {
+  try { return JSON.parse(text); } catch { return null; }
+}
 
+/* ---- Capacity helpers ---- */
+function minSafeCapacity(itemsInCat, nAgents) {
+  return Math.ceil(itemsInCat / nAgents);
+}
+
+/* ---- Random instance generator ---- */
 function generateRandomInput() {
-  /* ----- parameters you can tweak if you want bigger examples -------- */
-  const nItems      = randInt(4, 8);       // total items
-  const nCategories = randInt(1, Math.min(3, nItems));
-  const agents      = ["Agent1", "Agent2"];
-  /* ------------------------------------------------------------------- */
+  const userNItems = parseInt(document.getElementById('numItems').value || '', 10);
+  let nItems = Number.isInteger(userNItems) ? userNItems : null;
 
-  // Build item list o1, o2, …
+  const userNCats = parseInt(document.getElementById('numCategories').value || '', 10);
+  let nCategories = Number.isInteger(userNCats) ? userNCats : null;
+
+  const MIN_ITEMS = 1, MAX_ITEMS = 200;
+  const MIN_CATS = 1, MAX_CATS = 200;
+
+  if (nItems === null) nItems = randInt(4, 8);
+  else nItems = clampInt(nItems, MIN_ITEMS, MAX_ITEMS);
+
+  if (nCategories === null) nCategories = randInt(1, Math.min(3, nItems));
+  else nCategories = clampInt(nCategories, MIN_CATS, Math.min(MAX_CATS, nItems));
+
+  const agents = ["Agent1", "Agent2"];
+  const nAgents = agents.length;
+
   const items = Array.from({length: nItems}, (_, i) => `o${i + 1}`);
-
-  // Create category names cat1, cat2, …
   const categories = Array.from({length: nCategories}, (_, i) => `cat${i + 1}`);
 
-  // Randomly assign items to categories
   const item_categories = {};
-  items.forEach(it => {
-    item_categories[it] = categories[randInt(0, nCategories - 1)];
-  });
+  items.forEach(it => item_categories[it] = categories[randInt(0, nCategories - 1)]);
 
-  // Random valuations in [-5 … 5]
   const valuations = {};
   agents.forEach(a => {
     valuations[a] = {};
-    items.forEach(it => {
-      valuations[a][it] = randInt(-5, 5);
-    });
+    items.forEach(it => valuations[a][it] = randInt(-5, 5));
   });
 
-  // Category capacities – at least 1, at most ⌊|items_in_cat| / 2⌋
   const category_capacities = {};
   categories.forEach(cat => {
     const itemsInCat = items.filter(it => item_categories[it] === cat).length;
-    category_capacities[cat] = Math.max(1, Math.floor(itemsInCat / 2));
+    category_capacities[cat] = Math.max(1, minSafeCapacity(itemsInCat, nAgents));
   });
 
-  // Fill the three <textarea>s nicely indented
   document.querySelector('textarea[name="valuations"]').value =
     JSON.stringify(valuations, null, 2);
   document.querySelector('textarea[name="item_categories"]').value =
     JSON.stringify(item_categories, null, 2);
   document.querySelector('textarea[name="category_capacities"]').value =
     JSON.stringify(category_capacities, null, 2);
+
+  showValidationMessages([], `Generated random instance with minimal safe capacities.`);
 }
+
+/* ---- Validation ---- */
+function validateCategoryCapacities(item_categories, category_capacities, nAgents) {
+  const counts = {};
+  Object.values(item_categories).forEach(cat => counts[cat] = (counts[cat] || 0) + 1);
+
+  const problems = [];
+  for (const [cat, itemsInCat] of Object.entries(counts)) {
+    const cap = category_capacities ? category_capacities[cat] : undefined;
+    if (cap === undefined) {
+      problems.push(`Category "${cat}" missing in category_capacities.`);
+      continue;
+    }
+    const minNeeded = Math.ceil(itemsInCat / nAgents);
+    if (cap < minNeeded) {
+      problems.push(`Category "${cat}" has ${itemsInCat} items but capacity ${cap}; needs ≥ ${minNeeded}.`);
+    }
+  }
+  return problems;
+}
+
+/* ---- Auto-fix ---- */
+function computeSafeCapacities(item_categories, valuations) {
+  const nAgents = valuations ? Object.keys(valuations).length : 2;
+  const counts = {};
+  Object.values(item_categories).forEach(cat => counts[cat] = (counts[cat] || 0) + 1);
+
+  const newCaps = {};
+  for (const [cat, itemsInCat] of Object.entries(counts)) {
+    newCaps[cat] = Math.max(1, minSafeCapacity(itemsInCat, nAgents));
+  }
+  return newCaps;
+}
+
+function autoFixCapacitiesFromTextareas() {
+  const valuations = parseJSON(document.querySelector('textarea[name="valuations"]').value);
+  const itemCats  = parseJSON(document.querySelector('textarea[name="item_categories"]').value);
+  if (!itemCats) {
+    showValidationMessages(["Invalid JSON in item_categories field."], null, true);
+    return;
+  }
+  const newCaps = computeSafeCapacities(itemCats, valuations);
+  document.querySelector('textarea[name="category_capacities"]').value =
+    JSON.stringify(newCaps, null, 2);
+  showValidationMessages([], "Auto-fixed capacities (minimal safe).");
+}
+
+/* ---- UI helpers ---- */
+function showValidationMessages(problems, infoMessage, isError) {
+  const out = document.getElementById('validationMessages');
+  out.innerHTML = '';
+  if (problems.length) {
+    const box = document.createElement('div');
+    box.className = 'alert alert-danger';
+    box.innerHTML = '<strong>Capacity errors:</strong><br>' + problems.map(p => `<div>${p}</div>`).join('');
+    out.appendChild(box);
+  } else if (infoMessage) {
+    const box = document.createElement('div');
+    box.className = isError ? 'alert alert-danger' : 'alert alert-success';
+    box.textContent = infoMessage;
+    out.appendChild(box);
+  }
+}
+
+/* ---- Form validation on submit ---- */
+document.getElementById('instanceForm').addEventListener('submit', function(e) {
+  const valuations = parseJSON(document.querySelector('textarea[name="valuations"]').value);
+  const itemCats  = parseJSON(document.querySelector('textarea[name="item_categories"]').value);
+  const catCaps   = parseJSON(document.querySelector('textarea[name="category_capacities"]').value);
+  if (!valuations || !itemCats || !catCaps) {
+    e.preventDefault();
+    showValidationMessages(["Invalid JSON in one or more fields."], null, true);
+    return;
+  }
+
+  const nAgents = Object.keys(valuations).length;
+  const problems = validateCategoryCapacities(itemCats, catCaps, nAgents);
+  if (problems.length > 0) {
+    e.preventDefault();
+    showValidationMessages(problems, null, true);
+    const doFix = confirm("Capacity problems found. Auto-fix them?");
+    if (doFix) {
+      const fixed = computeSafeCapacities(itemCats, valuations);
+      document.querySelector('textarea[name="category_capacities"]').value =
+        JSON.stringify(fixed, null, 2);
+      setTimeout(() => document.getElementById('instanceForm').submit(), 100);
+    }
+  } else {
+    showValidationMessages([], "Capacities validated (all good).");
+  }
+});
 </script>
 {% endblock %}
+
+

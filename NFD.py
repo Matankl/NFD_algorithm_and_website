@@ -31,7 +31,7 @@ import logging
 
 
 
-logger = logging.getLogger("fair_division_demo")
+logger = logging.getLogger(__name__)
 
 item_categories = {
     "o1": "cat1", "o2": "cat1", "o3": "cat1", "o4": "cat1",  # 4 items in category 1
@@ -43,16 +43,8 @@ item_categories = {
 # ---------------------------
 example_instance = Instance(
     valuations={
-        # "Agent1": {"o1": 0, "o2": -1, "o3": -4, "o4": -5, "o5": 0, "o6": 2},
-"Agent1": {
-    "o1": -10,
-    "o2": -11,
-    "o3": -14,
-    "o4": -15,
-    "o5": 50,
-    "o6": -12
-  },
-        "Agent2": {"o1": 0, "o2": -1, "o3": -2, "o4": -1, "o5": 50, "o6": -60},
+        "Agent1": {"o1": 0, "o2": -1, "o3": -4, "o4": -5, "o5": 0, "o6": 2},
+        "Agent2": {"o1": 0, "o2": -1, "o3": -2, "o4": -1, "o5": -1, "o6": 0},
     },
     # agent_capacities={"Agent1": 3, "Agent2": 3},
     item_categories={
@@ -72,7 +64,7 @@ def Nearly_Fair_Division(alloc: AllocationBuilder) -> Optional[AllocationBuilder
 
     Parameters:
         alloc (AllocationBuilder): allocation builder with capacity-tracked state
-קר'ר
+
     Returns:
 
 
@@ -105,6 +97,7 @@ def Nearly_Fair_Division(alloc: AllocationBuilder) -> Optional[AllocationBuilder
     >>> divide(Nearly_Fair_Division, instance=instance3)
     {'A': ['o2'], 'B': ['o1']}
 
+
     >>> instance4 = Instance(
     ...     valuations={
     ...         "A": {"o1": 1, "o2": -1, "o3": 1, "o4": 1.5},
@@ -126,24 +119,30 @@ def Nearly_Fair_Division(alloc: AllocationBuilder) -> Optional[AllocationBuilder
 
     logger.info("Starting NFD run with instance = %s", alloc.instance)
 
-    # ---------- 0) Setup ----------
+    # ---------- 0) Sanity / setup ----------
     inst = alloc.instance
     agents: List[str] = list(inst.agents)
     if len(agents) != 2:
+        logger.error("NFD supports exactly two agents; found %d", len(agents))
         raise NotImplementedError("Current implementation supports exactly two agents.")
 
+    logger.debug("Initial remaining item capacities: %s", alloc.remaining_item_capacities)
+    logger.debug("Initial remaining agent capacities: %s", alloc.remaining_agent_capacities)
+    logger.debug("Initial agents' category capacities (if any): %s",
+                 getattr(alloc, "agents_category_capacities", None))
     # ----------------------------------------------------------------------
-    #  Category–wise W-max
+    #  1) Category–wise W-max allocation
     # ----------------------------------------------------------------------
-    logger.info("Allocating W-maximal allocation for two agents with weights [0.5, 0.5]")
+    logger.info("Compute W-maximal allocation for two agents with weights [0.5, 0.5]")
 
     logger.debug("remaining_item_capacities before w-max = %s", alloc.remaining_item_capacities)
     category_w_max_two_agents(alloc, weights=[0.5, 0.5])
     logger.debug("remaining_item_capacities after w-max = %s", alloc.remaining_item_capacities)
-    logger.debug("Allocation after W-max: %s", alloc.bundles)
+    logger.info(f"Bundles after W-max: {alloc.bundles}, this may noy be the final allocation.")
 
 
-    # ---------- 3) envy-elimination loop ----------
+    # ---------- 2) envy-elimination loop ----------
+    logger.info("Start envy-elimination loop (EF[1,1] checks + swaps)")
     def candidates_r_ratio(instance, bundles, envier, envied):
         """
         Find all same-category (o_envier, o_envied) pairs whose swap would improve
@@ -174,6 +173,7 @@ def Nearly_Fair_Division(alloc: AllocationBuilder) -> Optional[AllocationBuilder
         * Works with either lists or sets inside *bundles*.
 
         """
+        logger.debug("Finding candidate swaps for envier=%s envied=%s", envier, envied)
         # Turn ∪/list into a list to iterate cheaply
         envier_items = list(bundles[envier])
         envied_items = list(bundles[envied])
@@ -209,31 +209,42 @@ def Nearly_Fair_Division(alloc: AllocationBuilder) -> Optional[AllocationBuilder
 
         # Best first
         pairs.sort(key=lambda t: t[0], reverse=True)
+        logger.info("Found %d candidate swaps (best r=%.4f) for envier=%s",
+                    len(pairs), pairs[0][0] if pairs else float('-inf'), envier)
         return pairs
 
+    # Main loop: run until allocation is EF[1,1] or we fail to fix envy
     while True:
+        # Check EF[1,1]
+
         status = is_EF11(alloc.instance, alloc.bundles)
-        if is_EF1(alloc) is None or status is None:
+        ef1_status = is_EF1(alloc)
+        logger.debug("EF[1,1] check result=%s EF1 check result=%s", status, ef1_status)
+
+        if ef1_status is None or status is None:
+            logger.info("Allocation is both EF[1,1] and EF1. Final bundles=%s", alloc.bundles)
             break
 
-        logger.info(f"W-max allocation is not EF[1,1], starting envy-elimination iteration. {status}")
         envier, envied = status
+        logger.info("EF[1,1] violation found: envier=%s envied=%s, starting envy-elimination iteration.", envier, envied)
 
         # Candidate items that envier can still accept
         logger.info("Finding candidates to swap for envier %s and envied %s", envier, envied)
         candidates = candidates_r_ratio(inst, alloc.bundles, envier, envied)
         if candidates:
             r_best, o_envier, o_envied = candidates[0]
-            logger.info("Swapping items %s (envier) and %s (envied) with r = %.2f",
+            logger.info("Selected best candidate items swap: %s (envier) <-> %s (envied) with r=%.4f",
                         o_envier, o_envied, r_best)
             # preform the swap
             alloc.swap(envier, o_envier, envied, o_envied)
 
         else:
-            logger.info("No more candidates to swap, breaking the loop, the envy cant be fixed!!!!!!.")
+            logger.warning("No feasible candidate swaps exist to remove envy for (%s, %s). Returning None.",
+                           envier, envied)
             return None
 
-    logger.info("We have a final NFD allocation: %s \n\n", alloc.bundles)
+
+    logger.info("NFD finished successfully. Final allocation: %s \n\n\n\n", alloc.bundles)
     return alloc
 
 # ---------------------------------------------------------------------------
@@ -265,7 +276,7 @@ def Nearly_Fair_Division(alloc: AllocationBuilder) -> Optional[AllocationBuilder
 #               it is a w-maximal allocation in the sense of the paper.
 #
 # ---------------------------------------------------------------------------
-def w_max_two_agents2(alloc: "AllocationBuilder", *, weights: List[float]) -> None:
+def w_max_two_agents2(alloc: "AllocationBuilder", weights: List[float]) -> None:
     """
     Compute a w-maximal allocation on the still unassigned part of `alloc`
     for the *two* agents that are present in the instance.
@@ -280,6 +291,36 @@ def w_max_two_agents2(alloc: "AllocationBuilder", *, weights: List[float]) -> No
         Current state of the allocation.
     weights : list[float] of length 2
         (w₁, w₂) with  w₁, w₂ ≥ 0  and  w₁ + w₂ = 1.
+
+
+    ---------- How it works ----------
+1) Build a bipartite graph Gw
+Left side: one node per remaining unit of agent capacity.
+If agent A can still take 3 items, you create nodes AG[A]#0, #1, #2.
+(Mapping: agent_copy_to_agent.)
+
+Right side: one node per remaining unit of item capacity.
+If item x has capacity 2 left, you create nodes IT[x]#0, #1.
+(Mapping: item_copy_to_item.)
+
+Edges: connect every feasible agent-copy to every feasible item-copy.
+“Feasible” means:
+no (agent,item) conflict in alloc.remaining_conflicts;
+if category quotas are used, the agent still has ≥1 seat left for that item’s category.
+
+Edge weight:wi*ui*(item).
+You fold the entitlement weight into the value so a single standard max-weight matching solves the weighted problem.
+
+2) Solve matching
+Call networkx.algorithms.matching.max_weight_matching(G, maxcardinality=True, weight="weight").
+maxcardinality=True ⇒ among all matchings that match the maximum number of edges, choose the one with maximum total weight.
+That guarantees you fill as many slots as possible and you maximize the weighted welfare among those.
+
+3) Apply the matches back
+Each matched pair is a single real transfer (one unit) from an item to an agent:
+recover the real agent and item from the copy node names;
+call alloc.give(agent, item) which decrements all the relevant counters (item capacity, agent capacity, per-category capacity, and adds conflict side-effects if your builder does that).
+That’s it—the partial allocation in alloc is now a w-maximal extension over what was still free.
     """
     # ------------------------------------------------------------------
     # (0) Preparations & sanity checks
@@ -317,7 +358,6 @@ def w_max_two_agents2(alloc: "AllocationBuilder", *, weights: List[float]) -> No
             G.add_node(node, bipartite=0)
 
     # (1b) COPY NODES FOR ITEMS
-    #
     # One copy for every still available unit of each item’s capacity.
     item_copy_to_item : Dict[str, str] = {}
     for itm, cap in item_cap.items():
@@ -388,13 +428,10 @@ def w_max_two_agents2(alloc: "AllocationBuilder", *, weights: List[float]) -> No
     # Done – `alloc` now encodes a w-maximal allocation.
 
 
-# ---------------------------------------------------------------------------
-#  CATEGORY-WISE W-MAX FOR TWO AGENTS
-# ---------------------------------------------------------------------------
-
-
 def category_w_max_two_agents(alloc: "AllocationBuilder", *, weights: List[float]) -> None:
     """
+    the logic of this method is to separate the items by their categories and apply the w-max procedure
+
     Perform Definition 4.1 *within each category separately*.
 
     After the call, `alloc` already contains every item that can be assigned
@@ -488,19 +525,21 @@ def category_w_max_two_agents(alloc: "AllocationBuilder", *, weights: List[float
     >>> sorted(alloc.sorted().values()) in [[['x'], []], [[], ['x']]]
     True
     """
-
+    logger.info("Starting category-wise w-max for two agents with weights = %s", weights)
     inst = alloc.instance
     if len(inst.agents) != 2:
         raise ValueError("category_w_max_two_agents supports exactly two agents.")
     agents = list(inst.agents)
 
     # --- Build a *live* view of remaining items per category ----------------
+    logger.info("Building live view of remaining items per category")
     items_by_cat = defaultdict(list)
     for itm in alloc.remaining_items():
         cat = inst.item_categories.get(itm, "__NO_CAT__")
         items_by_cat[cat].append(itm)
 
     # --- Solve a small w-max instance for each category ---------------------
+    logger.info("Running w-max on each category separately")
     for cat, items_in_cat in items_by_cat.items():
         # Skip if nothing left in this category.
         if not items_in_cat:
@@ -521,7 +560,7 @@ def category_w_max_two_agents(alloc: "AllocationBuilder", *, weights: List[float
             if itm not in items_in_cat:
                 tmp_alloc.remove_item_from_loop(itm)
 
-        # 2. Throttle agent copies to *category* capacity instead of full
+        # 2. Throttle agent copies to category capacity instead of full
         #    remaining capacity.  (We do that by manually shrinking the
         #    per-agent capacity counters.)
         if inst.agents_category_capacities is not None:
@@ -539,7 +578,7 @@ def category_w_max_two_agents(alloc: "AllocationBuilder", *, weights: List[float
             if tmp_alloc.remaining_agent_capacities[ag] <= 0:
                 tmp_alloc.remove_agent_from_loop(ag)
 
-        # 3. Run the *plain* w-max on this trimmed instance.
+        # 3. Run the plain w-max on this trimmed instance.
         if not tmp_alloc.isdone():
             w_max_two_agents2(tmp_alloc, weights=weights)
 
@@ -586,6 +625,7 @@ def is_EF11(
     The procedure is streaming and keeps only O(n·|C|) numbers.
     """
     agents = list(bundles.keys())
+    A, B = agents[0], agents[1]  # exactly two agents supported, so we can name them
 
     # ---------- Helper: category of an item ----------
     if getattr(instance, "item_categories", None) is None:
@@ -598,61 +638,91 @@ def is_EF11(
         cat_of   = lambda item: item_cat[item]
 
     # ---------- Pre-compute per agent ----------
-    #
-    # total_value[a]                – v_a(B_a)
-    # min_neg[a][c]   (optional)    – least (i.e. most negative) value in category c
-    # max_pos[a][c]   (optional)    – highest positive value in category c
-    #
-    min_neg = {a: {} for a in agents}
-    max_pos = {a: {} for a in agents}
-    total_value = {}
+    # total_value_eyes_of_A[x]                – how much A values the bundle of [x]
+    # total_value_eyes_of_B[x]                – how much B values the bundle of [x]
+    # wost_chore_in_cat_eyes_of_self[X][c]    – how badly X values its worst chore in category c
+    # best_good_in_cat_eyes_of_other[X][c]    – how well X values the best good of the other agent in category c
 
-    for a, B in bundles.items():
-        tot = 0.0
-        for item in B:
-            v = instance.agent_item_value(a, item)
-            tot += v
+    wost_chore_in_cat_eyes_of_self = {a: {} for a in agents}
+    best_good_in_cat_eyes_of_other = {a: {} for a in agents}
+    total_value_eyes_of_A = {}
+    total_value_eyes_of_B = {}
+
+    # starting with the first agent (A) perspective
+    total_A_for_itself = 0.0
+    total_A_for_other = 0.0
+    for ag, Bundel in bundles.items(): # B = items of agent ag
+        for item in Bundel:
+            v = instance.agent_item_value(A, item)      # the items value in the eyes of A
             c = cat_of(item)
+            if item in bundles[A]:                      # if the item is in the bundle of A
+                total_A_for_itself += v
+            else:                                       # if the item is in the bundle of B
+                total_A_for_other += v
 
-            if v < 0:                          # chore for a
-                d = min_neg[a].get(c,  inf)
-                if v < d:                       # store *most* negative
-                    min_neg[a][c] = v
-            elif v > 0:                         # good for a
-                d = max_pos[a].get(c, -inf)
+            if v < 0 and item in bundles[A]:                            # chore for ag
+                d = wost_chore_in_cat_eyes_of_self[A].get(c,  inf)
+                if v < d:                                               # store *most* negative
+                    wost_chore_in_cat_eyes_of_self[A][c] = v
+            elif v > 0 and item not in bundles[A]:                      # good for ag
+                d = best_good_in_cat_eyes_of_other[B].get(c, -inf)
                 if v > d:
-                    max_pos[a][c] = v
-            # v == 0 never helps either side, so ignore
-        total_value[a] = tot
+                    best_good_in_cat_eyes_of_other[B][c] = v
+    total_value_eyes_of_A[A] = total_A_for_itself
+    total_value_eyes_of_A[B] = total_A_for_other
 
-    # ---------- Check every ordered pair (i, j) ----------
-    for i in agents:
-        for j in agents:
-            if i == j:
-                continue
 
-            gap = total_value[i] - total_value[j]      # positive ⇒ no envy
-            if gap >= 0:
-                continue                               # i already happy
+    # starting with the first agent (B) perspective
+    for ag, Bundel in bundles.items(): # B = items of agent ag
+        total_B_for_itself = 0.0
+        total_B_for_other = 0.0
+        for item in Bundel:
+            v = instance.agent_item_value(B, item)      # the items value in the eyes of B
+            c = cat_of(item)
+            if item in bundles[B]:                      # if the item is in the bundle of B
+                total_B_for_itself += v
+            else:                                       # if the item is in the bundle of A
+                total_B_for_other += v
 
-            # i envies j.  We must bridge |gap| by removing one chore from i
-            # and one good from j in the *same* category.
-            needed = -gap                              # amount we must gain
+            if v < 0 and item in bundles[B]:                            # chore for ag
+                d = wost_chore_in_cat_eyes_of_self[B].get(c,  inf)
+                if v < d:                                               # store *most* negative
+                    wost_chore_in_cat_eyes_of_self[B][c] = v
+            elif v > 0 and item not in bundles[B]:                      # good for ag
+                d = best_good_in_cat_eyes_of_other[A].get(c, -inf)
+                if v > d:
+                    best_good_in_cat_eyes_of_other[A][c] = v
+        total_value_eyes_of_B[B] = total_B_for_itself
+        total_value_eyes_of_B[A] = total_B_for_other
 
-            # Iterate only over categories where both sides *could* help.
-            #
-            # Note:  min_neg[i]       – categories where i owns at least one chore
-            #        max_pos[j]       – categories where j owns at least one good
-            candidate_categories = set(min_neg[i]).intersection(max_pos[j])
 
-            for c in candidate_categories:
-                gain = -min_neg[i][c] + max_pos[j][c]  # −v_i(chore) + v_i(good)
-                if gain >= needed:                     # envy eliminated
-                    break
-            else:
-                return (i, j)  # Found a violating pair
+    # ---------- look for envy and if it can be fixed ----------
 
-    return None
+    # first check A envies B
+    gap = total_value_eyes_of_A[A] - total_value_eyes_of_A[B]      # positive ⇒ no envy
+    if gap < 0:                               # A envies B
+        needed = -gap                          # amount we must gain
+        candidate_categories = set(wost_chore_in_cat_eyes_of_self[A]).intersection(best_good_in_cat_eyes_of_other[B])
+        for c in candidate_categories:
+            gain = -wost_chore_in_cat_eyes_of_self[A][c] + best_good_in_cat_eyes_of_other[B][c]
+            if gain >= needed:                     # envy eliminated
+                break
+        else:
+            return (A, B)  # Found a violating pair
+
+    # then check B envies A
+    gap = total_value_eyes_of_B[B] - total_value_eyes_of_B[A]      # positive ⇒ no envy
+    if gap < 0:                               # B envies A
+        needed = -gap                          # amount we must gain
+        candidate_categories = set(wost_chore_in_cat_eyes_of_self[B]).intersection(best_good_in_cat_eyes_of_other[A])
+        for c in candidate_categories:
+            gain = -wost_chore_in_cat_eyes_of_self[B][c] + best_good_in_cat_eyes_of_other[A][c]
+            if gain >= needed:                     # envy eliminated
+                break
+        else:
+            return (B, A)
+
+    return None  # All pairs satisfied EF[1,1]
 
 
 def is_EF1(allocation: "AllocationBuilder",
@@ -735,7 +805,7 @@ if __name__ == "__main__":
     import sys
     logger.addHandler(logging.StreamHandler(sys.stdout))
     logger.setLevel(logging.INFO)
-    logger.setLevel(logging.DEBUG)
+    # logger.setLevel(logging.DEBUG)
     print(doctest.testmod())
 
 
@@ -934,3 +1004,111 @@ def w_max_two_agents(alloc: "AllocationBuilder",
 #
 # # All pairs passed
 # return None
+
+
+def old_is_EF11(                        # the problem with this function is that it dosent use aperspective to judge the bundel of b and the opposite(also as dor the best good and worst chore)
+        instance: "Instance",
+        bundles: Dict[Hashable, Iterable[Hashable]],
+) -> Optional[Tuple[Hashable, Hashable]]:
+    """
+    Return **True** iff the given allocation is envy-free-up-to-one-good-and-one-chore
+    (EF[1,1]) with respect to the *instance*.
+    Fit only for 1 good and 1 chore only goods and chores will be checked using EF1
+
+    Parameters
+    ----------
+    instance : Instance
+        The instance that supplies all valuations and (optionally) item categories
+        via `instance.agent_item_value(a,i)`  and `instance.item_categories[i]`.
+    bundles : dict(agent -> iterable(item))
+        The final allocation, e.g. the `bundles` attribute of an
+        `AllocationBuilder`, or its `.sorted()` result.
+
+    The definition implemented is the one highlighted in the paper:
+
+        For every ordered pair of agents (i, j)
+        either i already values her bundle at least as much as j’s bundle, **or**
+        there exists
+            • one *chore* (negatively-valued item for i) in i’s bundle and
+            • one *good*  (positively-valued item for i) in j’s bundle
+        that lie in the *same category* (if categories are used), such that after
+        simultaneously removing those two items i does not envy j.
+
+    Complexity
+    ----------
+    *Pre-processing*          Θ(Σ |B_a|) (one pass over the allocation)
+    *Pair check* (worst-case) Θ(|C|) for each ordered pair (i, j) –
+                              thus overall  Θ(n²·|C|) where |C| ≤ number of items.
+                              In typical course-allocation sizes this is negligible.
+    The procedure is streaming and keeps only O(n·|C|) numbers.
+    """
+    agents = list(bundles.keys())
+
+    # ---------- Helper: category of an item ----------
+    if getattr(instance, "item_categories", None) is None:
+        # If no categories are supplied, treat all items as belonging to the single
+        # dummy category None, which exactly matches the paper's definition with no
+        # category restriction.
+        cat_of = lambda item: None
+    else:
+        item_cat = instance.item_categories
+        cat_of   = lambda item: item_cat[item]
+
+    # ---------- Pre-compute per agent ----------
+    #
+    # total_value[a]                – v_a(B_a)
+    # min_neg[a][c]   (optional)    – least (i.e. most negative) value in category c
+    # max_pos[a][c]   (optional)    – highest positive value in category c
+    #
+    min_neg = {a: {} for a in agents}
+    max_pos = {a: {} for a in agents}
+    total_value = {}
+
+    for ag, B in bundles.items(): # B = items of agent ag
+        tot = 0.0
+        for item in B:
+            v = instance.agent_item_value(ag, item) # the items value in the eyes of ag
+            tot += v
+            c = cat_of(item)
+
+            if v < 0:                          # chore for ag
+                d = min_neg[ag].get(c,  inf)
+                if v < d:                       # store *most* negative
+                    min_neg[ag][c] = v
+            elif v > 0:                         # good for ag
+                d = max_pos[ag].get(c, -inf)
+                if v > d:
+                    max_pos[ag][c] = v
+            # v == 0 never helps either side, so ignore
+        total_value[ag] = tot                  # this contain the total value of each agent for their own bundle!!!!!!!
+    print("this is the totoal value amounts",total_value)
+    print("those are the bundels the total value is calculated from",bundles)
+
+    # ---------- Check every ordered pair (i, j) ----------
+    for i in agents:
+        for j in agents:
+            if i == j:
+                continue
+
+            gap = total_value[i] - total_value[j]      # positive ⇒ no envy
+            if gap >= 0:
+                continue                               # i am already happy
+
+            # i envies j.  We must bridge |gap| by removing one chore from i
+            # and one good from j in the *same* category.
+            needed = -gap                              # amount we must gain
+
+            # Iterate only over categories where both sides *could* help.
+            #
+            # Note:  min_neg[i]       – categories where i owns at least one chore
+            #        max_pos[j]       – categories where j owns at least one good
+            candidate_categories = set(min_neg[i]).intersection(max_pos[j])
+
+            for c in candidate_categories:
+                gain = -min_neg[i][c] + max_pos[j][c]  # −v_i(chore) + v_i(good)
+                if gain >= needed:                     # envy eliminated
+                    break
+            else:
+                return (i, j)  # Found a violating pair
+
+    return None
